@@ -31,13 +31,13 @@ export const tasksApi = api.injectEndpoints({
   endpoints: (builder) => ({
     getTasks: builder.query<Task[], void>({
       query: () => '/tasks/',
-      providesTags: ['Task'],
-      transformResponse: (response: any) => {
+      providesTags: ['Task'], // Simplified - cache clearing on logout handles user isolation
+      transformResponse: (response: Task[] | { items: Task[] }) => {
         // Handle paginated response from backend
-        if (response.items) {
+        if ('items' in response && Array.isArray(response.items)) {
           return response.items
         }
-        return response
+        return response as Task[]
       },
     }),
     getTask: builder.query<Task, number>({
@@ -58,14 +58,47 @@ export const tasksApi = api.injectEndpoints({
         method: 'PUT',
         body: task,
       }),
-      invalidatesTags: (_result, _error, { id }) => [{ type: 'Task', id }],
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: 'Task', id },
+        'Task', // This invalidates the entire tasks list cache
+      ],
+      // Optimistic update - update cache immediately before request completes
+      onQueryStarted: async ({ id, task }, { dispatch, queryFulfilled }) => {
+        // Optimistically update the individual task cache
+        const taskPatchResult = dispatch(
+          tasksApi.util.updateQueryData('getTask', id, (draft) => {
+            Object.assign(draft, task)
+          })
+        )
+        
+        // Optimistically update the tasks list cache
+        const listPatchResult = dispatch(
+          tasksApi.util.updateQueryData('getTasks', undefined, (draft) => {
+            const taskIndex = draft.findIndex((t) => t.id === id)
+            if (taskIndex !== -1) {
+              Object.assign(draft[taskIndex], task)
+            }
+          })
+        )
+
+        try {
+          await queryFulfilled
+        } catch {
+          // If the update fails, revert the optimistic updates
+          taskPatchResult.undo()
+          listPatchResult.undo()
+        }
+      },
     }),
     deleteTask: builder.mutation<void, number>({
       query: (id: number) => ({
         url: `/tasks/${id}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['Task'],
+      invalidatesTags: (_result, _error, id) => [
+        { type: 'Task', id },
+        'Task', // This invalidates the entire tasks list cache
+      ],
     }),
   }),
 })

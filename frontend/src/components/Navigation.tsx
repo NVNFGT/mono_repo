@@ -22,37 +22,47 @@ export function Navigation() {
   }
 
   return (
-    <nav className="fixed top-0 w-full bg-background border-b border-border z-50">
+    <nav className="fixed top-0 w-full bg-background/80 backdrop-blur-lg border-b border-border/50 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          <Link to="/" className="flex items-center space-x-2">
-            <CheckSquare className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold">Todo App</span>
+          <Link to="/" className="flex items-center space-x-3 group">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110">
+              <CheckSquare className="h-5 w-5 text-white" />
+            </div>
+            <span className="text-xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent">
+              TaskFlow
+            </span>
           </Link>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             <Button
               variant="ghost"
               size="icon"
               onClick={toggleTheme}
               aria-label="Toggle theme"
+              className="h-10 w-10 rounded-xl hover:bg-muted/80 transition-all duration-300 hover:scale-110"
             >
-              {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+              {theme === 'light' ? 
+                <Moon className="h-5 w-5 text-muted-foreground" /> : 
+                <Sun className="h-5 w-5 text-muted-foreground" />
+              }
             </Button>
 
             {user && (
               <>
-                <span className="text-sm text-muted-foreground">
-                  Welcome, {user.username}
-                </span>
+                <div className="hidden sm:flex px-3 py-2 rounded-xl bg-muted/50">
+                  <span className="text-sm text-muted-foreground">
+                    Welcome, <span className="font-semibold text-foreground">{user.username}</span>
+                  </span>
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleLogout}
-                  className="flex items-center space-x-2"
+                  className="flex items-center space-x-2 h-10 px-4 rounded-xl hover:bg-destructive/10 hover:text-destructive transition-all duration-300 hover:scale-105"
                 >
                   <LogOut className="h-4 w-4" />
-                  <span>Logout</span>
+                  <span className="hidden sm:inline">Logout</span>
                 </Button>
               </>
             )}

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useGetTasksQuery, useDeleteTaskMutation, useUpdateTaskMutation, type Task } from '../store/api/tasksApi'
 import { Button } from './ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card'
+import { TaskForm } from './TaskForm'
 import { Trash2, Edit2, Check, Plus } from 'lucide-react'
 
 export function TaskList() {
@@ -65,9 +66,10 @@ export function TaskList() {
             <CardTitle>Create New Task</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-4 text-muted-foreground">
-              Task form will be available soon
-            </div>
+            <TaskForm
+              onSuccess={() => setShowCreateForm(false)}
+              onCancel={() => setShowCreateForm(false)}
+            />
           </CardContent>
         </Card>
       )}
@@ -78,9 +80,11 @@ export function TaskList() {
             <CardTitle>Edit Task</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-4 text-muted-foreground">
-              Task editing will be available soon
-            </div>
+            <TaskForm
+              task={editingTask}
+              onSuccess={() => setEditingTask(null)}
+              onCancel={() => setEditingTask(null)}
+            />
           </CardContent>
         </Card>
       )}

@@ -42,4 +42,4 @@ app.blueprint(task_bp)
 
 if __name__ == "__main__":
     logger.info("🚀 Starting Sanic backend server...")
-    app.run(host=HOST, port=PORT, debug=DEBUG)
+    app.run(host=HOST, port=PORT, debug=DEBUG, auto_reload=True)

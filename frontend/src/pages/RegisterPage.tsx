@@ -10,7 +10,8 @@ import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Label } from '../components/ui/Label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../components/ui/Card'
-import { CheckSquare, Eye, EyeOff } from 'lucide-react'
+import { useTheme } from '../hooks/useTheme'
+import { CheckSquare, Eye, EyeOff, Moon, Sun } from 'lucide-react'
 
 const registerSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
@@ -30,6 +31,11 @@ export function RegisterPage() {
   const navigate = useNavigate()
   const dispatch = useDispatch()
   const [register, { isLoading, error }] = useRegisterMutation()
+  const { theme, setTheme } = useTheme()
+  
+  const toggleTheme = () => {
+    setTheme(theme === 'light' ? 'dark' : 'light')
+  }
 
   const {
     register: registerField,
@@ -52,115 +58,186 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <CheckSquare className="h-12 w-12 text-primary" />
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Animated gradient background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-cyan-500/10 dark:from-emerald-900/20 dark:via-teal-900/10 dark:to-cyan-900/20" />
+      <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/5 via-transparent to-purple-500/5" />
+      
+      {/* Floating elements */}
+      <div className="absolute top-20 right-20 w-72 h-72 bg-emerald-500/10 rounded-full blur-3xl animate-float" />
+      <div className="absolute bottom-20 left-20 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl animate-float" style={{ animationDelay: '1.5s' }} />
+      
+      {/* Theme Toggle Button */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={toggleTheme}
+        className="absolute top-6 right-6 z-50 glass hover:bg-white/20 dark:hover:bg-black/20 backdrop-blur-md border-white/20"
+        aria-label="Toggle theme"
+      >
+        {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+      </Button>
+      
+      <Card className="w-full max-w-md relative z-10 glass dark:glass-dark border-white/20 shadow-2xl animate-fade-in">
+        <CardHeader className="text-center space-y-4 pb-8">
+          <div className="flex justify-center mb-6">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg">
+              <CheckSquare className="h-10 w-10 text-white" />
+            </div>
           </div>
-          <CardTitle className="text-2xl">Create Account</CardTitle>
-          <CardDescription>
-            Sign up to get started with your tasks
-          </CardDescription>
+          <div className="space-y-2">
+            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+              Create Account
+            </CardTitle>
+            <CardDescription className="text-base text-muted-foreground/80">
+              Join us and start organizing your tasks today
+            </CardDescription>
+          </div>
         </CardHeader>
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+        <form onSubmit={handleSubmit(onSubmit)} className="animate-slide-up">
+          <CardContent className="space-y-5 px-8">
+            <div className="space-y-3">
+              <Label htmlFor="username" className="text-sm font-medium text-foreground/90">
+                Username
+              </Label>
               <Input
                 id="username"
                 type="text"
+                placeholder="Choose a username"
                 {...registerField('username')}
-                className={errors.username ? 'border-destructive' : ''}
+                className={`h-12 bg-background/50 border-border/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all duration-200 ${errors.username ? 'border-destructive focus:border-destructive focus:ring-destructive/20' : ''}`}
               />
               {errors.username && (
-                <p className="text-sm text-destructive">{errors.username.message}</p>
+                <p className="text-sm text-destructive flex items-center gap-1">
+                  <span className="w-1 h-1 bg-destructive rounded-full" />
+                  {errors.username.message}
+                </p>
               )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+            
+            <div className="space-y-3">
+              <Label htmlFor="email" className="text-sm font-medium text-foreground/90">
+                Email Address
+              </Label>
               <Input
                 id="email"
                 type="email"
+                placeholder="Enter your email"
                 {...registerField('email')}
-                className={errors.email ? 'border-destructive' : ''}
+                className={`h-12 bg-background/50 border-border/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all duration-200 ${errors.email ? 'border-destructive focus:border-destructive focus:ring-destructive/20' : ''}`}
               />
               {errors.email && (
-                <p className="text-sm text-destructive">{errors.email.message}</p>
+                <p className="text-sm text-destructive flex items-center gap-1">
+                  <span className="w-1 h-1 bg-destructive rounded-full" />
+                  {errors.email.message}
+                </p>
               )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+            <div className="space-y-3">
+              <Label htmlFor="password" className="text-sm font-medium text-foreground/90">
+                Password
+              </Label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
+                  placeholder="Create a password"
                   {...registerField('password')}
-                  className={errors.password ? 'border-destructive pr-10' : 'pr-10'}
+                  className={`h-12 bg-background/50 border-border/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 pr-12 transition-all duration-200 ${errors.password ? 'border-destructive focus:border-destructive focus:ring-destructive/20' : ''}`}
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  className="absolute right-1 top-1 h-10 w-10 hover:bg-muted/50 transition-colors"
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
                   ) : (
-                    <Eye className="h-4 w-4" />
+                    <Eye className="h-4 w-4 text-muted-foreground" />
                   )}
                 </Button>
               </div>
               {errors.password && (
-                <p className="text-sm text-destructive">{errors.password.message}</p>
+                <p className="text-sm text-destructive flex items-center gap-1">
+                  <span className="w-1 h-1 bg-destructive rounded-full" />
+                  {errors.password.message}
+                </p>
               )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
+            
+            <div className="space-y-3">
+              <Label htmlFor="confirmPassword" className="text-sm font-medium text-foreground/90">
+                Confirm Password
+              </Label>
               <div className="relative">
                 <Input
                   id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="Confirm your password"
                   {...registerField('confirmPassword')}
-                  className={errors.confirmPassword ? 'border-destructive pr-10' : 'pr-10'}
+                  className={`h-12 bg-background/50 border-border/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 pr-12 transition-all duration-200 ${errors.confirmPassword ? 'border-destructive focus:border-destructive focus:ring-destructive/20' : ''}`}
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  className="absolute right-1 top-1 h-10 w-10 hover:bg-muted/50 transition-colors"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 >
                   {showConfirmPassword ? (
-                    <EyeOff className="h-4 w-4" />
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
                   ) : (
-                    <Eye className="h-4 w-4" />
+                    <Eye className="h-4 w-4 text-muted-foreground" />
                   )}
                 </Button>
               </div>
               {errors.confirmPassword && (
-                <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
+                <p className="text-sm text-destructive flex items-center gap-1">
+                  <span className="w-1 h-1 bg-destructive rounded-full" />
+                  {errors.confirmPassword.message}
+                </p>
               )}
             </div>
+            
             {error && (
-              <div className="text-sm text-destructive">
-                {'data' in error && error.data && typeof error.data === 'object' && 'detail' in error.data
-                  ? (error.data as { detail: string }).detail
-                  : 'Registration failed. Please try again.'}
+              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 animate-bounce-in">
+                <p className="text-sm text-destructive font-medium">
+                  {'data' in error && error.data && typeof error.data === 'object' && 'detail' in error.data
+                    ? (error.data as { detail: string }).detail
+                    : 'Registration failed. Please try again.'}
+                </p>
               </div>
             )}
           </CardContent>
-          <CardFooter className="flex flex-col space-y-4">
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Creating account...' : 'Create Account'}
+          <CardFooter className="flex flex-col space-y-6 px-8 pb-8">
+            <Button 
+              type="submit" 
+              className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100" 
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Creating account...
+                </div>
+              ) : (
+                'Create Account'
+              )}
             </Button>
-            <p className="text-sm text-muted-foreground text-center">
-              Already have an account?{' '}
-              <Link to="/login" className="text-primary hover:underline">
-                Sign in
-              </Link>
-            </p>
+            
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">
+                Already have an account?{' '}
+                <Link 
+                  to="/login" 
+                  className="font-semibold text-transparent bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text hover:from-emerald-700 hover:to-teal-700 transition-all duration-200 hover:underline"
+                >
+                  Sign in here
+                </Link>
+              </p>
+            </div>
           </CardFooter>
         </form>
       </Card>

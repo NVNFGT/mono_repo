@@ -1,5 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
 import type { User } from '../api/authApi'
+import { api } from '../api/apiSlice'
 
 interface AuthState {
   user: User | null
@@ -39,6 +40,7 @@ const authSlice = createSlice({
       state.isAuthenticated = true
     },
   },
+
 })
 
 export const { setCredentials, logout, setUser } = authSlice.actions

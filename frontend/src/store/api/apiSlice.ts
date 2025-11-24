@@ -15,7 +15,7 @@ const baseQuery = fetchBaseQuery({
     return headers
   },
   // Add timeout and retry logic
-  timeout: 10000,
+  timeout: 30000, // Increased to 30 seconds for development
 })
 
 // Enhanced base query with retry logic for backend connectivity

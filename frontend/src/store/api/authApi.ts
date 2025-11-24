@@ -51,6 +51,16 @@ export const authApi = api.injectEndpoints({
           }
         }
       },
+      // Clear all cached data when user logs in to prevent seeing other users' data
+      onQueryStarted: async (arg, { dispatch, queryFulfilled }) => {
+        try {
+          await queryFulfilled
+          // Reset the entire API cache to ensure no cross-user data contamination
+          dispatch(api.util.resetApiState())
+        } catch {
+          // Login failed, no need to clear cache
+        }
+      },
     }),
     register: builder.mutation<AuthResponse, RegisterRequest>({
       query: (userData: RegisterRequest) => ({

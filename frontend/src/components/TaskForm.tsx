@@ -9,6 +9,9 @@ import { Label } from './ui/Label'
 const taskSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title must be less than 200 characters'),
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
+  priority: z.enum(['low', 'medium', 'high']).optional(),
+  status: z.enum(['pending', 'in_progress', 'completed']).optional(),
+  due_date: z.string().optional(),
 })
 
 type TaskFormData = z.infer<typeof taskSchema>
@@ -33,24 +36,45 @@ export function TaskForm({ task, onSuccess, onCancel }: TaskFormProps) {
     defaultValues: {
       title: task?.title || '',
       description: task?.description || '',
+      priority: task?.priority || 'medium',
+      status: task?.status || 'pending',
+      due_date: task?.due_date?.split('T')[0] || '', // Extract date part for input[type="date"]
     },
   })
 
   const onSubmit = async (data: TaskFormData) => {
     try {
+      // Prepare the task data, converting date to ISO format if provided
+      const taskData = {
+        ...data,
+        due_date: data.due_date && data.due_date.trim() !== '' 
+          ? new Date(data.due_date + 'T00:00:00').toISOString() 
+          : undefined,
+      }
+
+      // Clean up undefined values before sending to API
+      const cleanTaskData = Object.fromEntries(
+        Object.entries(taskData).filter(([_, value]) => value !== undefined && value !== '')
+      )
+
+      console.log('Submitting task data:', cleanTaskData)
+
       if (task) {
         // Update existing task
         await updateTask({
           id: task.id,
-          task: data,
+          task: cleanTaskData,
         }).unwrap()
+        console.log('Task updated successfully')
       } else {
         // Create new task
-        await createTask(data).unwrap()
+        const result = await createTask(cleanTaskData).unwrap()
+        console.log('Task created successfully:', result)
       }
       onSuccess()
     } catch (error) {
       console.error('Failed to save task:', error)
+      console.error('Error details:', JSON.stringify(error, null, 2))
     }
   }
 
@@ -83,6 +107,47 @@ export function TaskForm({ task, onSuccess, onCancel }: TaskFormProps) {
         />
         {errors.description && (
           <p className="text-sm text-destructive">{errors.description.message}</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="priority">Priority</Label>
+          <select
+            id="priority"
+            {...register('priority')}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="status">Status</Label>
+          <select
+            id="status"
+            {...register('status')}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="pending">Pending</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="due_date">Due Date (optional)</Label>
+        <Input
+          id="due_date"
+          type="date"
+          {...register('due_date')}
+          className={errors.due_date ? 'border-destructive' : ''}
+        />
+        {errors.due_date && (
+          <p className="text-sm text-destructive">{errors.due_date.message}</p>
         )}
       </div>
 
