@@ -2,6 +2,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useCreateTaskMutation, useUpdateTaskMutation, type Task } from '../store/api/tasksApi'
+import { useAlerts } from '../hooks/useAlerts'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { Label } from './ui/Label'
@@ -25,6 +26,7 @@ interface TaskFormProps {
 export function TaskForm({ task, onSuccess, onCancel }: TaskFormProps) {
   const [createTask, { isLoading: isCreating }] = useCreateTaskMutation()
   const [updateTask, { isLoading: isUpdating }] = useUpdateTaskMutation()
+  const { notify } = useAlerts()
   const isLoading = isCreating || isUpdating
 
   const {
@@ -65,16 +67,16 @@ export function TaskForm({ task, onSuccess, onCancel }: TaskFormProps) {
           id: task.id,
           task: cleanTaskData,
         }).unwrap()
-        console.log('Task updated successfully')
+        notify.taskUpdated(cleanTaskData.title || task.title)
       } else {
         // Create new task
         const result = await createTask(cleanTaskData).unwrap()
-        console.log('Task created successfully:', result)
+        notify.taskCreated(cleanTaskData.title || 'New Task')
       }
       onSuccess()
     } catch (error) {
       console.error('Failed to save task:', error)
-      console.error('Error details:', JSON.stringify(error, null, 2))
+      notify.saveError()
     }
   }
 

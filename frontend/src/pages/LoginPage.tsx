@@ -7,6 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useLoginMutation } from '../store/api/authApi'
 import { setCredentials } from '../store/slices/authSlice'
+import { useAlerts } from '../hooks/useAlerts'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Label } from '../components/ui/Label'
@@ -27,6 +28,7 @@ export function LoginPage() {
   const dispatch = useDispatch()
   const [login, { isLoading, error }] = useLoginMutation()
   const { theme, setTheme } = useTheme()
+  const { notify } = useAlerts()
   
   const toggleTheme = () => {
     setTheme(theme === 'light' ? 'dark' : 'light')
@@ -55,13 +57,13 @@ export function LoginPage() {
   const onSubmit = async (data: LoginFormData) => {
     try {
       const result = await login(data).unwrap()
-      console.log('Login result:', result)
       dispatch(setCredentials(result))
-      console.log('Navigating to dashboard...')
+      notify.loginSuccess(result.user?.username || 'User')
       navigate('/dashboard')
-    } catch (err) {
-      // Error is handled by RTK Query
+    } catch (err: any) {
       console.error('Login failed:', err)
+      const errorMessage = err?.data?.detail || err?.data?.error || 'Login failed'
+      notify.loginError(errorMessage)
     }
   }
 
@@ -157,15 +159,7 @@ export function LoginPage() {
               )}
             </div>
             
-            {error && (
-              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 animate-bounce-in">
-                <p className="text-sm text-destructive font-medium">
-                  {'data' in error && error.data && typeof error.data === 'object' && 'detail' in error.data
-                    ? (error.data as { detail: string }).detail
-                    : 'Login failed. Please check your credentials.'}
-                </p>
-              </div>
-            )}
+
           </CardContent>
           <CardFooter className="flex flex-col space-y-6 px-8 pb-8">
             <Button 

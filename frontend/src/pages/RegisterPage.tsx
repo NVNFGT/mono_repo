@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useRegisterMutation } from '../store/api/authApi'
 import { setCredentials } from '../store/slices/authSlice'
+import { useAlerts } from '../hooks/useAlerts'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Label } from '../components/ui/Label'
@@ -32,6 +33,7 @@ export function RegisterPage() {
   const dispatch = useDispatch()
   const [register, { isLoading, error }] = useRegisterMutation()
   const { theme, setTheme } = useTheme()
+  const { notify } = useAlerts()
   
   const toggleTheme = () => {
     setTheme(theme === 'light' ? 'dark' : 'light')
@@ -50,10 +52,12 @@ export function RegisterPage() {
       const { confirmPassword, ...registerData } = data
       const result = await register(registerData).unwrap()
       dispatch(setCredentials(result))
-      navigate('/')
-    } catch (err) {
-      // Error is handled by RTK Query
+      notify.registerSuccess(result.user?.username || registerData.username)
+      navigate('/dashboard')
+    } catch (err: any) {
       console.error('Registration failed:', err)
+      const errorMessage = err?.data?.detail || err?.data?.error || 'Registration failed'
+      notify.registerError(errorMessage)
     }
   }
 
@@ -201,15 +205,7 @@ export function RegisterPage() {
               )}
             </div>
             
-            {error && (
-              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 animate-bounce-in">
-                <p className="text-sm text-destructive font-medium">
-                  {'data' in error && error.data && typeof error.data === 'object' && 'detail' in error.data
-                    ? (error.data as { detail: string }).detail
-                    : 'Registration failed. Please try again.'}
-                </p>
-              </div>
-            )}
+
           </CardContent>
           <CardFooter className="flex flex-col space-y-6 px-8 pb-8">
             <Button 
