@@ -1,6 +1,6 @@
 import asyncio
 from db import engine, Base
-from db import User, Task  # ensures models metadata is imported
+from db import User, Task, AIInsight, TaskPrediction, UserPattern  # ensures models metadata is imported
 
 async def create_all():
     async with engine.begin() as conn:

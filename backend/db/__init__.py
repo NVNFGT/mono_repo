@@ -1,5 +1,5 @@
 from .database import engine, AsyncSessionLocal, Base
-from .models import User, Task, StatusEnum, PriorityEnum
+from .models import User, Task, StatusEnum, PriorityEnum, AIInsight, TaskPrediction, UserPattern
 
 __all__ = [
     'engine',
@@ -8,5 +8,8 @@ __all__ = [
     'User',
     'Task',
     'StatusEnum',
-    'PriorityEnum'
+    'PriorityEnum',
+    'AIInsight',
+    'TaskPrediction',
+    'UserPattern'
 ]
