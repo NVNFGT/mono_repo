@@ -6,17 +6,20 @@ export interface ParsedTask {
   title: string;
   description?: string;
   priority: 'low' | 'medium' | 'high';
-  dueDate?: Date;
+  dueDate?: any; // Can be structured date object or string
   category?: string;
+  estimatedDurationMinutes?: number;
   confidence: number;
 }
 
 export interface TaskSuggestion {
   id: string;
-  type: 'priority' | 'due_date' | 'description' | 'category';
+  type: 'priority' | 'due_date' | 'description' | 'category' | 'breakdown' | 'reminder' | 'delegation' | 'priority_clarification' | 'description_improve';
+  source?: string;
   suggestion: string;
   confidence: number;
   reasoning: string;
+  metadata?: Record<string, any>;
 }
 
 export interface AIInsight {
