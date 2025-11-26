@@ -15,6 +15,12 @@ from dateutil import parser as date_parser
 from dataclasses import dataclass
 import logging
 
+# Import our date parser
+try:
+    from ...utils.date_parser import DateParser
+except ImportError:
+    from utils.date_parser import DateParser
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -24,18 +30,25 @@ class ParsedTask:
     title: str
     description: Optional[str] = None
     priority: str = "medium"  # low, medium, high
-    due_date: Optional[datetime] = None
+    due_date: Optional[Dict[str, Any]] = None  # structured date object
     category: Optional[str] = None
+    estimated_duration_minutes: Optional[int] = None  # estimated duration in minutes
     confidence: float = 0.0
     raw_input: str = ""
 
 @dataclass
 class TaskSuggestion:
     """Represents an AI suggestion for task improvement"""
-    suggestion_type: str  # priority, due_date, description, category
+    suggestion_type: str  # priority_clarification, description_improve, breakdown, due_date_add, reminder, delegation
     suggestion: str
     confidence: float
     reasoning: str
+    metadata: Optional[Dict[str, Any]] = None
+    
+    def __post_init__(self):
+        """Ensure metadata is never None"""
+        if self.metadata is None:
+            self.metadata = {}
 
 class TaskParser:
     """Advanced NLP task parser using spaCy and rule-based extraction"""
@@ -56,6 +69,9 @@ class TaskParser:
         
         # Initialize NLTK components
         self._init_nltk()
+        
+        # Initialize date parser
+        self.date_parser = DateParser()
         
         # Priority keywords mapping
         self.priority_keywords = {
@@ -127,7 +143,7 @@ class TaskParser:
         title = self._extract_title(input_text, doc)
         description = self._extract_description(input_text, doc)
         priority = self._extract_priority(input_text, doc)
-        due_date = self._extract_due_date(input_text, doc)
+        due_date = self._extract_due_date(input_text, doc, context)
         category = self._extract_category(input_text, doc)
         
         # Calculate confidence score
@@ -138,7 +154,8 @@ class TaskParser:
             'category': category
         })
         
-        return ParsedTask(
+        # Create initial parsed task
+        parsed_task = ParsedTask(
             title=title,
             description=description,
             priority=priority,
@@ -147,6 +164,11 @@ class TaskParser:
             confidence=confidence,
             raw_input=input_text
         )
+        
+        # Estimate duration
+        parsed_task.estimated_duration_minutes = self.estimate_duration_minutes(parsed_task)
+        
+        return parsed_task
     
     def _extract_title(self, text: str, doc) -> str:
         """Extract the main task title from input"""
@@ -195,56 +217,47 @@ class TaskParser:
         if any(indicator in text_lower for indicator in urgency_indicators):
             return "high"
         
-        # Check for deadline proximity (implies higher priority)
-        due_date = self._extract_due_date(text, doc)
-        if due_date:
-            days_until = (due_date - datetime.now()).days
-            if days_until <= 1:
-                return "high"
-            elif days_until <= 7:
-                return "medium"
+        # Note: Due date proximity check moved to avoid circular dependency
+        # This could be enhanced later by checking context for existing parsed due_date
         
         return "medium"  # Default priority
     
-    def _extract_due_date(self, text: str, doc) -> Optional[datetime]:
-        """Extract due date from text using multiple approaches"""
+    def _extract_due_date(self, text: str, doc, context: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
+        """Extract due date from text using DateParser and return structured format"""
+        
+        # Extract date expressions from text
+        date_expressions = []
         
         # First, try spaCy's built-in date detection
         for ent in doc.ents:
             if ent.label_ in ["DATE", "TIME"]:
-                try:
-                    parsed_date = date_parser.parse(ent.text, fuzzy=True)
-                    if parsed_date > datetime.now():
-                        return parsed_date
-                except:
-                    continue
+                date_expressions.append(ent.text)
         
         # Try pattern-based extraction
         for pattern in self.time_patterns:
             matches = re.findall(pattern, text, re.IGNORECASE)
             for match in matches:
-                try:
-                    if isinstance(match, tuple):
-                        match = ' '.join(match)
-                    
-                    # Handle relative dates
-                    if 'tomorrow' in match.lower():
-                        return datetime.now() + timedelta(days=1)
-                    elif 'today' in match.lower():
-                        return datetime.now()
-                    elif 'next week' in match.lower():
-                        return datetime.now() + timedelta(weeks=1)
-                    elif 'next month' in match.lower():
-                        return datetime.now() + timedelta(days=30)
-                    
-                    # Try to parse as date
-                    parsed_date = date_parser.parse(match, fuzzy=True)
-                    if parsed_date > datetime.now():
-                        return parsed_date
-                except:
-                    continue
+                if isinstance(match, tuple):
+                    match = ' '.join(match)
+                date_expressions.append(match)
         
-        return None
+        # Check for common date words
+        date_words = ['tomorrow', 'today', 'tonight', 'next week', 'next month', 'friday', 'saturday', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday']
+        for word in date_words:
+            if word in text.lower():
+                date_expressions.append(word)
+        
+        # Use DateParser to parse the best candidate
+        best_result = None
+        best_confidence = 0.0
+        
+        for expression in date_expressions:
+            result = self.date_parser.parse_date(expression, context)
+            if result['confidence'] > best_confidence and result['parsed']:
+                best_result = result
+                best_confidence = result['confidence']
+        
+        return best_result
     
     def _extract_category(self, text: str, doc) -> Optional[str]:
         """Extract task category based on keywords and context"""
@@ -290,35 +303,231 @@ class TaskParser:
         
         return min(sum(confidence_factors), 1.0)
     
+    def estimate_duration_minutes(self, parsed_task: ParsedTask) -> Optional[int]:
+        """
+        Estimate task duration in minutes based on complexity indicators
+        """
+        title = parsed_task.title.lower() if parsed_task.title else ""
+        description = parsed_task.description.lower() if parsed_task.description else ""
+        full_text = f"{title} {description}".strip()
+        
+        # Base duration by task length and complexity
+        word_count = len(full_text.split())
+        
+        # Duration keywords and their typical times (in minutes) - updated for realism
+        duration_indicators = {
+            'quick': 30, 'brief': 45, 'short': 60,
+            'meeting': 60, 'call': 45, 'email': 20,
+            'research': 180, 'analyze': 120, 'study': 240,
+            'write': 90, 'create': 120, 'design': 180,
+            'review': 45, 'check': 30, 'update': 45,
+            'plan': 75, 'organize': 90, 'setup': 75,
+            'install': 60, 'configure': 90, 'implement': 240,
+            'project': 480, 'presentation': 150, 'report': 240
+        }
+        
+        # Find duration clues
+        estimated_duration = None
+        for keyword, minutes in duration_indicators.items():
+            if keyword in full_text:
+                if estimated_duration is None:
+                    estimated_duration = minutes
+                else:
+                    # Take average if multiple indicators
+                    estimated_duration = (estimated_duration + minutes) // 2
+        
+        # Adjust based on priority and complexity
+        if estimated_duration:
+            if parsed_task.priority == "high":
+                estimated_duration = int(estimated_duration * 1.2)  # High priority tasks often take longer
+            elif parsed_task.priority == "low":
+                estimated_duration = int(estimated_duration * 0.8)  # Low priority might be simpler
+            
+            # Adjust for task description length
+            if word_count > 20:
+                estimated_duration = int(estimated_duration * 1.3)  # Complex descriptions suggest longer tasks
+            elif word_count < 5:
+                estimated_duration = max(30, int(estimated_duration * 0.8))  # Very short tasks - minimum 30 minutes
+        
+        else:
+            # Fallback estimation based on word count and priority - more realistic estimates
+            if word_count < 5:
+                estimated_duration = 45  # Very simple task (was 15)
+            elif word_count < 10:
+                estimated_duration = 60  # Simple task (was 30)
+            elif word_count < 20:
+                estimated_duration = 90  # Medium complexity (was 60)
+            else:
+                estimated_duration = 150  # Complex task (was 120)
+                
+            # Adjust for priority
+            if parsed_task.priority == "high":
+                estimated_duration = int(estimated_duration * 1.5)
+            elif parsed_task.priority == "low":
+                estimated_duration = max(30, int(estimated_duration * 0.7))  # Minimum 30 minutes
+        
+        return estimated_duration
+
     def generate_suggestions(self, parsed_task: ParsedTask) -> List[TaskSuggestion]:
-        """Generate improvement suggestions for a parsed task"""
+        """
+        Generate targeted improvement suggestions based on task analysis gaps.
+        Only suggests improvements for actual weaknesses or missing information.
+        """
         suggestions = []
+        suggestion_counter = 0  # For consistent ID generation
+        title = parsed_task.title.lower() if parsed_task.title else ""
+        description = parsed_task.description.lower() if parsed_task.description else ""
+        full_text = f"{title} {description}".strip()
         
-        # Priority suggestion
-        if parsed_task.confidence < 0.7:
+        def add_suggestion(suggestion_type: str, suggestion: str, confidence: float, reasoning: str, metadata: Optional[Dict[str, Any]] = None):
+            """Helper to add suggestions with normalized IDs"""
+            nonlocal suggestion_counter
             suggestions.append(TaskSuggestion(
-                suggestion_type="priority",
-                suggestion=f"Consider specifying priority level more clearly",
-                confidence=0.8,
-                reasoning="Priority keywords were not clearly detected in the input"
+                suggestion_type=suggestion_type,
+                suggestion=suggestion,
+                confidence=confidence,
+                reasoning=reasoning,
+                metadata=metadata or {}
             ))
+            suggestion_counter += 1
         
-        # Due date suggestion
+        # 1. Priority Clarification - only if priority is unclear or conflicting signals
+        priority_signals = {
+            'high': ['urgent', 'asap', 'immediately', 'critical', 'emergency', 'now'],
+            'low': ['someday', 'eventually', 'when possible', 'nice to have', 'optional']
+        }
+        
+        high_signals = sum(1 for word in priority_signals['high'] if word in full_text)
+        low_signals = sum(1 for word in priority_signals['low'] if word in full_text)
+        
+        if high_signals > 0 and parsed_task.priority == "medium":
+            add_suggestion(
+                "priority_clarification",
+                "This task contains urgency indicators - consider setting priority to 'high'",
+                0.8,
+                f"Detected {high_signals} urgency keyword(s) but priority is set to medium"
+            )
+        elif parsed_task.priority == "medium" and high_signals == 0 and low_signals == 0:
+            # Only suggest if there are no clear priority indicators and task is genuinely ambiguous
+            vague_indicators = ['should', 'need to', 'have to', 'must', 'important']
+            # Only suggest priority clarification for truly ambiguous cases
+            if not any(indicator in full_text for indicator in vague_indicators) and len(full_text.split()) < 5:
+                add_suggestion(
+                    "priority_clarification",
+                    "Consider specifying the priority level (high/medium/low) for better planning",
+                    0.5,
+                    "Very brief task with no clear priority indicators"
+                )
+        
+        # 2. Due Date Addition - only if no date mentioned and task seems time-sensitive
         if not parsed_task.due_date:
-            suggestions.append(TaskSuggestion(
-                suggestion_type="due_date",
-                suggestion="Consider adding a due date for better planning",
-                confidence=0.7,
-                reasoning="No due date was found in the task description"
-            ))
+            time_sensitive_words = ['deadline', 'by', 'before', 'until', 'due', 'meeting', 'appointment', 'event']
+            urgency_words = ['urgent', 'asap', 'soon', 'quickly', 'immediately']
+            
+            if any(word in full_text for word in time_sensitive_words + urgency_words):
+                add_suggestion(
+                    "due_date_add",
+                    "This task seems time-sensitive - consider adding a specific due date",
+                    0.8,
+                    "Task contains time-sensitive or urgency keywords but no due date specified"
+                )
+            elif parsed_task.priority == "high":
+                add_suggestion(
+                    "due_date_add",
+                    "High priority tasks benefit from having clear deadlines",
+                    0.7,
+                    "High priority task without a specified due date"
+                )
         
-        # Description enhancement
-        if not parsed_task.description and len(parsed_task.title) < 30:
-            suggestions.append(TaskSuggestion(
-                suggestion_type="description",
-                suggestion="Add more details to clarify what needs to be done",
-                confidence=0.6,
-                reasoning="Task description is quite brief"
-            ))
+        # 3. Description Improvement - only if genuinely unclear or too vague
+        if len(parsed_task.title) < 15:  # Very short title
+            add_suggestion(
+                "description_improve",
+                "Add more specific details about what needs to be accomplished",
+                0.7,
+                "Task title is very brief and may lack clarity",
+                {
+                    "title_length": len(parsed_task.title),
+                    "improvement_type": "length",
+                    "suggested_min_length": 20
+                }
+            )
+        elif not parsed_task.description and len(parsed_task.title) < 25:
+            # Check if title contains vague verbs
+            vague_verbs = ['do', 'handle', 'deal with', 'work on', 'check', 'look at']
+            found_vague_verbs = [verb for verb in vague_verbs if verb in title]
+            if found_vague_verbs:
+                add_suggestion(
+                    "description_improve",
+                    "Clarify the specific actions needed to complete this task",
+                    0.8,
+                    "Task uses vague action words that could be more specific",
+                    {
+                        "vague_verbs_found": found_vague_verbs,
+                        "improvement_type": "specificity",
+                        "suggestion_examples": ["What specific outcome do you want?", "What are the concrete steps?"]
+                    }
+                )
+        
+        # 4. Task Breakdown - for large or complex tasks
+        complex_indicators = ['project', 'plan', 'organize', 'setup', 'implement', 'research', 'analyze']
+        multiple_actions = len([word for word in full_text.split() if word in ['and', '&', 'then', 'also', 'plus']])
+        
+        if any(indicator in full_text for indicator in complex_indicators) or multiple_actions >= 2:
+            if len(full_text.split()) > 8:  # Reasonably complex task
+                add_suggestion(
+                    "breakdown",
+                    "Consider breaking this into smaller, more manageable sub-tasks",
+                    0.7,
+                    "Task appears complex and could benefit from being divided into steps",
+                    {
+                        "complexity_indicators": [ind for ind in complex_indicators if ind in full_text],
+                        "multiple_actions_count": multiple_actions,
+                        "word_count": len(full_text.split())
+                    }
+                )
+        
+        # 5. Reminder Suggestions - for future or important tasks (avoid duplicates)
+        reminder_added = False
+        if parsed_task.due_date and parsed_task.due_date.get('parsed'):
+            try:
+                # Check if we already have reminder suggestions
+                if not any(s.suggestion_type == "reminder" for s in suggestions):
+                    add_suggestion(
+                        "reminder",
+                        "Set a reminder 1-2 days before the due date to ensure timely completion",
+                        0.6,
+                        "Tasks with due dates benefit from advance reminders",
+                        {"suggested_reminder_days_before": 1, "reminder_type": "due_date_based"}
+                    )
+                    reminder_added = True
+            except:
+                pass
+        
+        # Add reminder for high priority tasks without due dates (if no reminder already added)
+        if not reminder_added and parsed_task.priority == "high" and not parsed_task.due_date:
+            add_suggestion(
+                "reminder",
+                "Consider setting a regular check-in reminder for this high-priority task",
+                0.5,
+                "High priority tasks benefit from regular progress tracking",
+                {"suggested_reminder_frequency": "daily", "reminder_type": "priority_based"}
+            )
+        
+        # 6. Delegation Opportunities - for collaborative or teamwork tasks
+        delegation_keywords = ['team', 'meeting', 'discuss', 'collaborate', 'share', 'delegate', 'assign']
+        matched_keywords = [kw for kw in delegation_keywords if kw in full_text]
+        if matched_keywords:
+            add_suggestion(
+                "delegation",
+                "Consider if any part of this task can be delegated or shared with team members",
+                0.5,
+                "Task involves collaborative elements that might allow for delegation",
+                {
+                    "delegation_indicators": matched_keywords,
+                    "suggested_delegation_type": "collaborative" if "collaborate" in matched_keywords else "assignable",
+                    "teamwork_complexity": "high" if len(matched_keywords) > 2 else "medium"
+                }
+            )
         
         return suggestions

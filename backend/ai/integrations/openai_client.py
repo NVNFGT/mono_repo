@@ -14,6 +14,12 @@ import openai
 from openai import AsyncOpenAI
 from dataclasses import dataclass, asdict
 
+# Import our date parser
+try:
+    from ..utils.date_parser import DateParser
+except ImportError:
+    from utils.date_parser import DateParser
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -24,19 +30,27 @@ class TaskAnalysis:
     description: Optional[str]
     priority: str  # low, medium, high
     category: Optional[str]
-    estimated_duration: Optional[int]  # minutes
-    due_date_suggestion: Optional[str]
+    estimated_duration_minutes: Optional[int]  # explicit minutes
+    due_date: Optional[Dict[str, Any]]  # structured date with raw/parsed/precision
     confidence: float
     reasoning: str
 
 @dataclass
 class TaskSuggestion:
     """AI-generated task improvement suggestion"""
-    type: str  # priority, due_date, description, category, breakdown
+    id: str
+    type: str  # priority, due_date, description, category, breakdown, reminder, delegation
+    source: str  # ai, nlp_rules, ml_model
     suggestion: str
     confidence: float
     reasoning: str
     action_required: bool = False
+    metadata: Optional[Dict[str, Any]] = None
+    
+    def __post_init__(self):
+        """Ensure metadata is never None"""
+        if self.metadata is None:
+            self.metadata = {}
 
 class OpenAIClient:
     """Async OpenAI client for task intelligence features"""
@@ -60,6 +74,7 @@ class OpenAIClient:
             
         self.model = model
         self.timeout = timeout
+        self.date_parser = DateParser()
         
         # System prompts for different tasks
         self.task_parsing_prompt = """
@@ -70,23 +85,25 @@ Parse the following task description and return a JSON response with these field
 - description: Detailed description if provided or inferred (optional)
 - priority: low, medium, or high based on urgency/importance (required)
 - category: work, personal, shopping, finance, learning, social, or null (optional)
-- estimated_duration: estimated time to complete in minutes (optional)
-- due_date_suggestion: suggested due date in natural language if relevant (optional)
+- estimated_duration_minutes: estimated time to complete in minutes (optional)
+- due_date_raw: natural language due date if mentioned (optional)
 - confidence: confidence score 0.0-1.0 for the analysis (required)
 - reasoning: brief explanation of your analysis (required)
 
 Be practical and actionable. If information is unclear, make reasonable assumptions but reflect uncertainty in the confidence score.
+Always specify duration in minutes explicitly.
 """
 
         self.suggestion_prompt = """
 You are a productivity expert providing task improvement suggestions.
 
-Analyze the given task and provide up to 3 suggestions for improvement. Return a JSON array with suggestions containing:
-- type: priority, due_date, description, category, or breakdown
+Analyze the given task and provide up to 3 suggestions for improvement. Return a JSON object with a 'suggestions' array containing:
+- type: priority, due_date, description, category, breakdown, reminder, or delegation
 - suggestion: specific actionable suggestion
 - confidence: confidence score 0.0-1.0
 - reasoning: brief explanation
 - action_required: true if user action is needed, false for informational
+- metadata: optional object with additional structured data (e.g., {"relativeToDueDateDays": -2} for reminders)
 
 Focus on practical improvements that will help the user be more productive and organized.
 """
@@ -107,6 +124,14 @@ Focus on practical improvements that will help the user be more productive and o
             return self._fallback_analysis(input_text)
         
         try:
+            # Update date parser reference time from context
+            if context and context.get("timestamp"):
+                try:
+                    ref_time = datetime.fromisoformat(context["timestamp"].replace("Z", "+00:00"))
+                    self.date_parser.reference_time = ref_time
+                except (ValueError, AttributeError):
+                    pass
+            
             # Prepare the prompt with context
             user_prompt = f"Task to analyze: \"{input_text}\""
             if context:
@@ -126,13 +151,19 @@ Focus on practical improvements that will help the user be more productive and o
             # Parse the response
             result = json.loads(response.choices[0].message.content)
             
+            # Parse due date if provided
+            due_date = None
+            due_date_raw = result.get("due_date_raw")
+            if due_date_raw:
+                due_date = self.date_parser.parse_date(due_date_raw, context)
+            
             return TaskAnalysis(
                 title=result.get("title", input_text[:100]),
                 description=result.get("description"),
                 priority=result.get("priority", "medium"),
                 category=result.get("category"),
-                estimated_duration=result.get("estimated_duration"),
-                due_date_suggestion=result.get("due_date_suggestion"),
+                estimated_duration_minutes=result.get("estimated_duration_minutes"),
+                due_date=due_date,
                 confidence=float(result.get("confidence", 0.5)),
                 reasoning=result.get("reasoning", "AI analysis completed")
             )
@@ -181,13 +212,16 @@ Focus on practical improvements that will help the user be more productive and o
             
             return [
                 TaskSuggestion(
+                    id=f"ai_suggestion_{i+1}",
                     type=s.get("type", "general"),
+                    source="ai",
                     suggestion=s.get("suggestion", ""),
                     confidence=float(s.get("confidence", 0.5)),
                     reasoning=s.get("reasoning", ""),
-                    action_required=bool(s.get("action_required", False))
+                    action_required=bool(s.get("action_required", False)),
+                    metadata=s.get("metadata", {})
                 )
-                for s in suggestions_data
+                for i, s in enumerate(suggestions_data)
                 if s.get("suggestion")  # Only include suggestions with content
             ]
             
@@ -290,8 +324,8 @@ Focus on practical improvements that will help the user be more productive and o
             description=input_text if len(input_text) > 50 else None,
             priority=priority,
             category=None,
-            estimated_duration=None,
-            due_date_suggestion=None,
+            estimated_duration_minutes=None,
+            due_date=None,
             confidence=0.3,  # Low confidence for fallback
             reasoning="Fallback analysis - OpenAI not available"
         )
@@ -303,20 +337,26 @@ Focus on practical improvements that will help the user be more productive and o
         title = task_data.get("title", "")
         if len(title) < 10:
             suggestions.append(TaskSuggestion(
+                id="fallback_suggestion_1",
                 type="description",
+                source="fallback_rules",
                 suggestion="Consider adding more details to your task description",
                 confidence=0.7,
                 reasoning="Task title is quite brief",
-                action_required=True
+                action_required=True,
+                metadata={"fallback_reason": "short_title", "title_length": len(title)}
             ))
         
         if not task_data.get("due_date"):
             suggestions.append(TaskSuggestion(
+                id="fallback_suggestion_2",
                 type="due_date",
+                source="fallback_rules",
                 suggestion="Adding a due date can help with planning and prioritization",
                 confidence=0.6,
                 reasoning="No due date specified",
-                action_required=False
+                action_required=False,
+                metadata={"fallback_reason": "missing_due_date"}
             ))
         
         return suggestions

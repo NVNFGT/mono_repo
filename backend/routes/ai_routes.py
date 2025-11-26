@@ -96,15 +96,18 @@ async def parse_task(request: Request, body: ParseTaskRequest) -> JSONResponse:
             except Exception as e:
                 logger.warning(f"OpenAI analysis failed, using NLP only: {e}")
         
-        # Combine results
+        # Combine results (prefer OpenAI analysis when available, fallback to NLP)
         result = {
             "parsedTask": {
                 "title": openai_analysis.title if openai_analysis else parsed_task.title,
                 "description": openai_analysis.description if openai_analysis else parsed_task.description,
                 "priority": openai_analysis.priority if openai_analysis else parsed_task.priority,
                 "category": openai_analysis.category if openai_analysis else parsed_task.category,
-                "dueDate": openai_analysis.due_date_suggestion if openai_analysis else None,
-                "estimatedDuration": openai_analysis.estimated_duration if openai_analysis else None,
+                "dueDate": openai_analysis.due_date if openai_analysis else parsed_task.due_date,
+                "estimatedDurationMinutes": (
+                    openai_analysis.estimated_duration_minutes if openai_analysis and openai_analysis.estimated_duration_minutes 
+                    else parsed_task.estimated_duration_minutes
+                ),
                 "confidence": openai_analysis.confidence if openai_analysis else parsed_task.confidence
             },
             "suggestions": [],
@@ -117,13 +120,15 @@ async def parse_task(request: Request, body: ParseTaskRequest) -> JSONResponse:
                 suggestions = await openai_client.generate_suggestions(result["parsedTask"], body.context)
                 result["suggestions"] = [
                     {
-                        "id": f"suggestion_{i}",
+                        "id": s.id,
                         "type": s.type,
+                        "source": s.source,
                         "suggestion": s.suggestion,
                         "confidence": s.confidence,
-                        "reasoning": s.reasoning
+                        "reasoning": s.reasoning,
+                        "metadata": s.metadata if s.metadata else {}
                     }
-                    for i, s in enumerate(suggestions)
+                    for s in suggestions
                 ]
             except Exception as e:
                 logger.warning(f"Failed to generate OpenAI suggestions: {e}")
@@ -132,11 +137,13 @@ async def parse_task(request: Request, body: ParseTaskRequest) -> JSONResponse:
         local_suggestions = task_parser.generate_suggestions(parsed_task)
         for i, s in enumerate(local_suggestions):
             result["suggestions"].append({
-                "id": f"nlp_suggestion_{i}",
+                "id": f"nlp_suggestion_{i+1}",
+                "source": "nlp_rules",
                 "type": s.suggestion_type,
                 "suggestion": s.suggestion,
                 "confidence": s.confidence,
-                "reasoning": s.reasoning
+                "reasoning": s.reasoning,
+                "metadata": s.metadata if s.metadata else {}
             })
         
         logger.info(f"Task parsed successfully for user {user_id}")
@@ -182,11 +189,12 @@ async def suggest_improvements(request: Request, task_id: int, query: SuggestImp
                 ai_suggestions = await openai_client.generate_suggestions(task_data, context)
                 suggestions.extend([
                     {
-                        "id": f"ai_suggestion_{i}",
+                        "id": f"ai_suggestion_{i+1}",
                         "type": s.type,
                         "suggestion": s.suggestion,
                         "confidence": s.confidence,
-                        "reasoning": s.reasoning
+                        "reasoning": s.reasoning,
+                        "metadata": s.metadata if s.metadata else {}
                     }
                     for i, s in enumerate(ai_suggestions)
                 ])
@@ -196,20 +204,22 @@ async def suggest_improvements(request: Request, task_id: int, query: SuggestImp
         # Add rule-based suggestions
         if not task.due_date:
             suggestions.append({
-                "id": "due_date_suggestion",
+                "id": "rule_suggestion_due_date",
                 "type": "due_date",
                 "suggestion": "Consider adding a due date for better planning",
                 "confidence": 0.7,
-                "reasoning": "Tasks with due dates are completed 40% more often"
+                "reasoning": "Tasks with due dates are completed 40% more often",
+                "metadata": {"suggestion_source": "completion_statistics"}
             })
         
         if task.priority.value == "medium" and "urgent" in (task.title + " " + (task.description or "")).lower():
             suggestions.append({
-                "id": "priority_suggestion",
+                "id": "rule_suggestion_priority",
                 "type": "priority",
                 "suggestion": "This task might need higher priority based on keywords",
                 "confidence": 0.6,
-                "reasoning": "Detected urgency keywords in task text"
+                "reasoning": "Detected urgency keywords in task text",
+                "metadata": {"urgency_keywords_found": ["urgent"], "current_priority": task.priority.value}
             })
         
         return JSONResponse(suggestions)
